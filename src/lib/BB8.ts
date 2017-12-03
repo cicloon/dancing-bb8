@@ -30,12 +30,11 @@ interface CommandResponse extends Command {
 }
 
 export class BB8 {
-  busy: Boolean = false;
-  connect$: Observable<BB8$>;
-  commandSubject: Subject<Command>;
-  command$: Observable<CommandResponse>;
   connected: Boolean = false;
   started: Boolean = false;
+  private connect$: Observable<BB8$>;
+  private command$: Observable<CommandResponse>;
+  private commandSubject: Subject<Command>;
 
   constructor(bb8Device: BluetoothDevice, services: BluetoothServiceUUID[] ) {
     this.connect$ = this.getConnectStream(bb8Device, services);
@@ -119,7 +118,6 @@ export class BB8 {
     }
 
     return this.commandSubject
-      .do(() => console.log('before combineLatest'))
       .combineLatest(
         this.connect$,
         (command?: Command, connection?: BB8$) => (

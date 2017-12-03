@@ -2,13 +2,18 @@ import * as React from 'react';
 import { Subject, Observable } from 'rxjs';
 import autobindDecorator from 'autobind-decorator';
 import { getDevice$ } from '../lib/bluetooth';
-import { BB8 } from '../lib/BB8';
 
 interface StateInterface {
   device?: BluetoothDevice;
 }
 
 interface PropsType {
+  serviceUUIDS: BluetoothServiceUUID[];
+  children: JSX.Element;
+}
+
+interface ChildrenPropsType {
+  device: BluetoothDevice;
   serviceUUIDS: BluetoothServiceUUID[];
 }
 
@@ -17,7 +22,7 @@ class BluetoothDeviceWrapper extends React.Component<PropsType> {
   click$: Subject<Boolean>;
   setColor$$: Subject<Boolean>;
 
-  constructor(props: { serviceUUIDS: BluetoothServiceUUID[] }) {
+  constructor(props: PropsType) {
     super(props);
     const state: StateInterface = {};
     this.state = state;
@@ -33,21 +38,19 @@ class BluetoothDeviceWrapper extends React.Component<PropsType> {
 
   renderDevice() {
     const { device }: { device?: BluetoothDevice } = this.state;
-    const { serviceUUIDS } = this.props;
-
-    if (device) {
-      const bb8 = new BB8(device, serviceUUIDS);
-      bb8.connect();
-      setTimeout(() => bb8.setColor(255, 0, 0), 4000);
-      setTimeout(() => bb8.setColor(255, 255, 0), 4500);
-      setTimeout(() => bb8.setColor(255, 255, 255), 5000);
-    }
+    const { serviceUUIDS, children } = this.props;
 
     return (
       device && (
         <div>
           <p> Connected to: </p>
           <span key={device.name}> {device.name} </span>
+          {React.Children.map(children, (child, index) =>
+            React.cloneElement(child as React.ReactElement<ChildrenPropsType>, {
+              device,
+              serviceUUIDS
+            })
+          )}
         </div>
       )
     );
