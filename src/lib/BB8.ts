@@ -47,18 +47,8 @@ export class BB8 {
       // tslint:disable-next-line no-console
       console.log('connecting');
       this.connected = true;
-
-      Observable.combineLatest(
-        connection.antiDos ?
-          connection.antiDos.writeValue(new Uint8Array('011i3'.split('').map(c => c.charCodeAt(0))))
-          : Observable.empty() ,
-        connection.txPower ?
-          connection.txPower.writeValue(new Uint8Array([0x07]))
-          : Observable.empty() ,
-        connection.wakeCpu ?
-          connection.wakeCpu.writeValue(new Uint8Array([0x01]))
-          : Observable.empty() ,
-      ).subscribe(() => {
+      this.getWakeUpStream(connection)
+      .subscribe(() => {
         // tslint:disable-next-line no-console
         console.log('bb8 started');
         this.started = true;
@@ -108,6 +98,20 @@ export class BB8 {
       .concatMap(
         (connecting) => (connecting.robotService.getCharacteristic(controlCharacteristicId)),
         (connecting, controlCharacteristic) => ({...connecting, controlCharacteristic}));
+  }
+
+  private getWakeUpStream(connection: BB8$): Observable<void> {
+    return Observable.combineLatest(
+      connection.antiDos ?
+        connection.antiDos.writeValue(new Uint8Array('011i3'.split('').map(c => c.charCodeAt(0))))
+        : Observable.empty() ,
+      connection.txPower ?
+        connection.txPower.writeValue(new Uint8Array([0x07]))
+        : Observable.empty() ,
+      connection.wakeCpu ?
+        connection.wakeCpu.writeValue(new Uint8Array([0x01]))
+        : Observable.empty() ,
+    );
   }
 
   private getCommandStream(): Observable<CommandResponse> {
