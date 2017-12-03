@@ -38,8 +38,8 @@ class BluetoothDeviceWrapper extends React.Component<PropsType> {
     if (device) {
       const bb8 = new BB8(device, serviceUUIDS);
       bb8.connect();
-      setTimeout(() => bb8.setColor(255, 0, 0), 3000);
-      setTimeout(() => bb8.setColor(255, 255, 0), 4000);
+      setTimeout(() => bb8.setColor(255, 0, 0), 4000);
+      setTimeout(() => bb8.setColor(255, 255, 0), 4500);
       setTimeout(() => bb8.setColor(255, 255, 255), 5000);
     }
 

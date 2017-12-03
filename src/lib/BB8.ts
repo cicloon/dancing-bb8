@@ -21,18 +21,26 @@ interface Command {
   did: number;
   cid: number;
   data: Uint8Array;
+  label?: string;
+}
+
+interface CommandResponse extends Command {
+  timestamp: number;
+  sequence: number;
 }
 
 export class BB8 {
   busy: Boolean = false;
   connect$: Observable<BB8$>;
-  command$: Subject<Command>;
+  commandSubject: Subject<Command>;
+  command$: Observable<CommandResponse>;
   connected: Boolean = false;
   started: Boolean = false;
 
   constructor(bb8Device: BluetoothDevice, services: BluetoothServiceUUID[] ) {
     this.connect$ = this.getConnectStream(bb8Device, services);
-    this.getCommandStream();
+    this.commandSubject = new Subject();
+    this.command$ = this.getCommandStream();
   }
 
   connect() {
@@ -55,6 +63,7 @@ export class BB8 {
         // tslint:disable-next-line no-console
         console.log('bb8 started');
         this.started = true;
+        this.command$.subscribe(this.logCommandResponse);
       });
     } );
     return this.connect$;
@@ -67,12 +76,11 @@ export class BB8 {
     const cid = 0x20; // Set RGB LED Output command
     // Color command data: red, green, blue, flag
     const data = new Uint8Array([r, g, b, 0]);
-    this.sendCommand({did, cid, data});
+    this.sendCommand({did, cid, data, label: 'setColor'});
   }
 
   private sendCommand(command: Command) {
-    const subject = this.command$;
-    subject.next(command);
+    this.commandSubject.next(command);
   }
 
   private getConnectStream(bb8Device: BluetoothDevice, services: BluetoothServiceUUID[]): Observable<BB8$> {
@@ -103,59 +111,71 @@ export class BB8 {
         (connecting, controlCharacteristic) => ({...connecting, controlCharacteristic}));
   }
 
-  private getCommandStream() {
+  private getCommandStream(): Observable<CommandResponse> {
     interface CommandControl {
       sequence?: number;
       command?: Command;
       control?: BluetoothRemoteGATTCharacteristic;
     }
 
-    this.command$ = new Subject();
-    // tslint:disable-next-line
-    this.command$.subscribe(() => {console.log('called subject'); } );
-
-    this.command$
-      // tslint:disable-next-line
-      .do((v) => {console.log('before concat', v); } )
+    return this.commandSubject
+      .do(() => console.log('before combineLatest'))
       .combineLatest(
         this.connect$,
         (command?: Command, connection?: BB8$) => (
           {command, control: connection!.controlCharacteristic}
         )
       )
-      // tslint:disable-next-line
-      .do((v) => {console.log('after concat', v); } )
       .scan(
         (acc: CommandControl, commandControl: CommandControl) => (
-          { sequence: acc.sequence, control: commandControl.control, command: commandControl.command }  ),
+          { sequence: acc.sequence! + 1, control: commandControl.control, command: commandControl.command }  ),
         { sequence: 0, command: undefined, control: undefined }  )
-      // tslint:disable-next-line
-      .do((v) => {console.log('after scan', v); } )
       .mergeMap((commandControl: CommandControl ) => {
         const { did, cid, data }: Command = commandControl.command!;
-        // tslint:disable-next-line no-bitwise
         const seq = commandControl.sequence! & 0xFF;
         let sop2 = 0xfc;
-        // tslint:disable-next-line no-bitwise
         sop2 |= 1; // Answer
-        // tslint:disable-next-line no-bitwise
         sop2 |= 2; // Reset timeout
-
         // Data length
         const dlen = data.byteLength + 1;
-        const sum = data.reduce((a: number, b: number) => (a + b));
         // Checksum
-        // tslint:disable-next-line no-bitwise
+        const sum = data.reduce((a: number, b: number) => (a + b));
         const chk = ((sum + did + cid + seq + dlen) & 0xFF) ^ 0xFF;
         const checksum = new Uint8Array([chk]);
+
         const packets = new Uint8Array([0xFF, sop2, did, cid, seq, dlen]);
         const array = new Uint8Array(packets.byteLength + data.byteLength + checksum.byteLength);
         array.set(packets, 0);
         array.set(data, packets.byteLength);
         array.set(checksum, packets.byteLength + data.byteLength);
-        // tslint:disable-next-line
-        console.log('sending: ', array);
-        return Observable.from(commandControl.control!.writeValue(array));
-      }).subscribe(() => (true));
+
+        const timestamp = Date.now();
+        console.debug('Command sent:', commandControl.sequence, commandControl.command!.label);
+        return Observable.of(array)
+          .bufferWhen(() => Observable.interval(20))
+          .flatMap(Observable.of)
+          .filter(Array.isArray)
+          .mergeMap(
+            (toSentArray) => {
+                return Observable.from(commandControl.control!.writeValue(toSentArray[0].buffer) );
+            })
+          .map((): CommandResponse => {
+            const command = commandControl.command!;
+            const sequence = commandControl.sequence!;
+            return { ...command, timestamp, sequence };
+          });
+      });
   }
+
+  private logCommandResponse(commandResponse: CommandResponse) {
+    const now = Date.now();
+    console.debug('Command performed:',
+                  commandResponse.sequence,
+                  commandResponse.label,
+    );
+    console.debug('  elapsed time:',
+                  now - commandResponse.timestamp
+    );
+  }
+
 }
